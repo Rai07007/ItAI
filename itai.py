@@ -19,12 +19,13 @@ import uuid
 import webbrowser
 from analysis import report, classify
 
-ROOT=Path(__file__).resolve().parent
+from runtime_paths import DATA_ROOT
+ROOT=DATA_ROOT
 FIELDS=['sequence','elapsed_ms','uptime_ms','temperature','humidity','mq_adc','mq_mv','mq_min','mq_max','flags']
 
 def utc(): return datetime.now(timezone.utc).isoformat()
 def atomic_json(path,value):
-    tmp=Path(str(path)+'.tmp');tmp.write_text(json.dumps(value,ensure_ascii=False,indent=2,allow_nan=False));tmp.replace(path)
+    tmp=Path(str(path)+'.tmp');tmp.write_text(json.dumps(value,ensure_ascii=False,indent=2,allow_nan=False), encoding='utf-8');tmp.replace(path)
 
 def request(base,path,key='',data=None,timeout=5):
     body=urllib.parse.urlencode(data).encode() if data is not None else None
@@ -130,11 +131,11 @@ def ollama_report(result,folder,model):
         closing=content.get('closing') if content.get('closing') in CLOSINGS else CLOSINGS[0]
         rendered=opening+'\n\n'+'\n\n'.join(catalogue[k] for k in ordered)+'\n\n'+closing
         (folder/'interpretacion_llm.txt').write_text(('DATOS SIMULADOS · NO ES UNA MEDICIÓN\n' if result['metadata'].get('demo') else '')+'SÍNTESIS LOCAL · REQUIERE REVISIÓN HUMANA\nModelo: '+model+
-            '\nEl LLM organiza frases verificadas; las cifras y conclusiones proceden de Python.\n\n'+rendered)
+            '\nEl LLM organiza frases verificadas; las cifras y conclusiones proceden de Python.\n\n'+rendered, encoding='utf-8')
         atomic_json(folder/'llm_auditoria.json',{'model':model,'created_utc':utc(),'prompt':prompt,'response':response,'validated_order':ordered})
         print('Interpretación LLM guardada.')
     except Exception as exc:
-        (folder/'interpretacion_llm.txt').write_text('LLM NO DISPONIBLE. El análisis numérico y los gráficos están completos.\n'+str(exc))
+        (folder/'interpretacion_llm.txt').write_text('LLM NO DISPONIBLE. El análisis numérico y los gráficos están completos.\n'+str(exc), encoding='utf-8')
         print('LLM no disponible; los datos y el informe se conservaron:',exc)
 
 def dashboard(folder,port):
@@ -176,7 +177,7 @@ def finish(db,folder,meta,args):
     update_panel(folder,meta,rows,'Generando análisis y gráficos')
     result=report(rows,meta,folder)
     if args.model!='none': ollama_report(result,folder,args.model)
-    else: (folder/'interpretacion_llm.txt').write_text('LLM desactivado para esta ejecución.')
+    else: (folder/'interpretacion_llm.txt').write_text('LLM desactivado para esta ejecución.', encoding='utf-8')
     update_panel(folder,meta,rows,'Informe disponible · '+meta.get('completion','finalizada'))
     hashes={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in folder.iterdir() if p.suffix in ('.csv','.json','.png','.html','.txt') and p.name!='sha256.json'}
     atomic_json(folder/'sha256.json',hashes)
@@ -184,7 +185,7 @@ def finish(db,folder,meta,args):
 
 def collect(args):
     if args.resume:
-        folder=Path(args.resume).resolve();meta=json.loads((folder/'sesion.json').read_text())
+        folder=Path(args.resume).resolve();meta=json.loads((folder/'sesion.json').read_text(encoding='utf-8'))
     else:
         if not re.fullmatch(r'[A-Za-z0-9_-]{1,40}',args.house): raise ValueError('Use código de hogar sin nombres ni direcciones, por ejemplo H001')
         sid=uuid.uuid4().hex;folder=ROOT/'mediciones'/(datetime.now().strftime('%Y%m%d-%H%M%S')+'_'+args.house+'_'+sid[:6]);folder.mkdir(parents=True)
@@ -192,7 +193,7 @@ def collect(args):
             'protocol_adaptation':'720 adquisiciones en 30 min; paper indica 1000. Cadencia del código original: 2500 ms.',
             'scope':'visita ambiental; visión y estructura no evaluadas','demo':False,'base':args.device}
         atomic_json(folder/'sesion.json',meta)
-    (folder/'panel.html').write_text(PANEL)
+    (folder/'panel.html').write_text(PANEL, encoding='utf-8')
     db=connect_db(folder);rows=read_rows(db);update_panel(folder,meta,rows,'Conectando al ESP32')
     server=dashboard(folder,args.port) if not args.no_browser else None
     base=meta['base']; key=args.key;cursor=rows[-1]['sequence'] if rows else 0
@@ -257,7 +258,7 @@ def demo(args):
             'temperature':round(19+.002*i+noise,1),'humidity':round(58+.025*i+noise*3,1),
             'mq_adc':adc,'mq_mv':round(adc*.8),'mq_min':adc-8,'mq_max':adc+8,'flags':7})
     meta={'house':'DEMO_NO_REAL','target':720,'demo':True,'completion':'demostración','created_utc':utc()}
-    atomic_json(folder/'sesion.json',meta);(folder/'panel.html').write_text(PANEL)
+    atomic_json(folder/'sesion.json',meta);(folder/'panel.html').write_text(PANEL, encoding='utf-8')
     # Deterministic demo can be regenerated; measured folders are never overwritten.
     db=connect_db(folder);db.execute('DELETE FROM samples');db.commit();save_batch(db,rows)
     finish(db,folder,meta,args);db.close()
@@ -276,7 +277,7 @@ def main():
     elif args.command=='collect':collect(args)
     else:
         if not args.resume:p.error('analyze requiere --resume CARPETA')
-        folder=Path(args.resume).resolve();meta=json.loads((folder/'sesion.json').read_text());db=connect_db(folder)
+        folder=Path(args.resume).resolve();meta=json.loads((folder/'sesion.json').read_text(encoding='utf-8'));db=connect_db(folder)
         finish(db,folder,meta,args);db.close()
 
 if __name__=='__main__':main()
