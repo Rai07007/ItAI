@@ -5,6 +5,7 @@ import unittest
 from runtime_paths import data_root
 from equipment import validate_transfer,import_transfer
 from test_mq_desktop import profile
+from mq135 import calibrate
 
 class WindowsSupportTests(unittest.TestCase):
     def test_user_data_is_not_in_program_files(self):
@@ -29,6 +30,11 @@ class WindowsSupportTests(unittest.TestCase):
             with self.assertRaises(ValueError):import_transfer(source,root)
             self.assertEqual(json.loads((root/'equipment.json').read_text(encoding='utf-8'))['api_key'],'previous')
             self.assertFalse((root/'mq_reference.json').exists())
+    def test_even_sample_reference_uses_median_resistance(self):
+        rows=[{'sequence':i+1,'mq_mv':1100 if i<12 else 1120,'flags':7} for i in range(24)]
+        p=calibrate(rows,{'circuit_v':5,'divider_factor':3},420,'assumed','Prueba de mediana par',conditioned=True)
+        self.assertEqual(validate_transfer({'format':'itai-equipment-v1','api_key':'test','mq_profile':p})['mq_profile'],p)
+
     def test_header_injection_rejected(self):
         with self.assertRaises(ValueError):validate_transfer({'format':'itai-equipment-v1','api_key':'abc\r\nX-Header: value'})
 

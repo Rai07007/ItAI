@@ -1,4 +1,6 @@
-# ItAI 2 — aplicación de escritorio
+# ItAI — aplicación de escritorio
+
+**Windows:** consulta [instalación y traslado del equipo](WINDOWS.md). Los pasos de `ItAI.app` de esta guía corresponden a macOS.
 
 Ahora se usa una **ventana nativa de Python/Qt**, sin navegador: visita en curso, gráficos, resultados y preparación del equipo. Se conserva el protocolo de 30 minutos y 720 adquisiciones, cada 2,5 segundos. El firmware que ya cargaste es compatible. Se respeta DHT11 DATA → GPIO16 y MQ135 A0 → GPIO34 con divisor; D0 continúa desactivado.
 

@@ -247,7 +247,9 @@ class ReferenceDialog(QDialog):
 
 class Window(QMainWindow):
     def __init__(self,demo=False):
-        super().__init__();self.setWindowTitle('ItAI · Acompañar con evidencia');self.resize(1240,850);self.setMinimumSize(1020,760)
+        super().__init__();self.setWindowTitle('ItAI · Acompañar con evidencia');self.setMinimumSize(900,620)
+        available=QApplication.primaryScreen().availableGeometry()
+        self.resize(min(1240,available.width()-30),min(850,available.height()-50))
         self.rows=[];self.meta={};self.folder=None;self.worker=None;self.checker=None;self.chat_worker=None;self.chat_token=None;self.chat_history=[];self.chat_partial='';self.current_result=None;self.chat_scope=None;self.profile=json_read(PROFILE);self.demo=demo
         root=QWidget();root.setObjectName('Main');self.setCentralWidget(root);layout=QHBoxLayout(root);layout.setContentsMargins(0,0,0,0);layout.setSpacing(0)
         side=QFrame();side.setObjectName('Sidebar');side.setFixedWidth(205);sl=QVBoxLayout(side);sl.setContentsMargins(22,34,22,24)
@@ -266,7 +268,8 @@ class Window(QMainWindow):
         self.pages.setCurrentIndex(i)
         for j,b in enumerate(self.nav):b.setChecked(i==j)
     def page(self):
-        w=QWidget();box=QVBoxLayout(w);box.setContentsMargins(32,28,32,24);box.setSpacing(18);self.pages.addWidget(w);return w,box
+        w=QWidget();box=QVBoxLayout(w);box.setContentsMargins(32,28,32,24);box.setSpacing(18)
+        scroll=QScrollArea();scroll.setWidgetResizable(True);scroll.setWidget(w);self.pages.addWidget(scroll);return w,box
     def build_visit(self):
         w,box=self.page();head=QHBoxLayout();title=QVBoxLayout();title.addWidget(label('UNA MIRADA AL AMBIENTE','Eyebrow'));title.addWidget(label('Cada hogar, una historia.','Title'));title.addWidget(label('Observa cómo cambia el ambiente durante esta visita.','Subtitle'));head.addLayout(title);head.addStretch()
         self.house=QLineEdit('PRUEBA01');self.house.setMaximumWidth(150);self.house.setPlaceholderText('Código del hogar');head.addWidget(self.house);box.addLayout(head)
