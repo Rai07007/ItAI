@@ -18,14 +18,18 @@ def main():
             from analysis import report
             from itai import connect_db,save_batch,read_rows
             from equipment import validate_transfer
-            app=QApplication([]);app.setStyleSheet(STYLE);w=Window(demo=True)
+            app=QApplication([]);app.setStyleSheet(STYLE)
+            from PySide6.QtGui import QRawFont
+            font=QRawFont.fromFont(app.font())
+            assert font.isValid() and font.supportsCharacter(ord('A')) and font.supportsCharacter(ord('ñ')), 'Faltan fuentes legibles'
+            w=Window(demo=True)
             db=connect_db(folder);save_batch(db,w.rows);saved=read_rows(db);db.close()
             result=report(saved,w.meta,folder)
             assert result['quality']['received']==450
             assert result['variables']['temperature']['inference']['available']
             assert result['insights']['events']['humid']['outside_n']>0
             validate_transfer({'format':'itai-equipment-v1','api_key':'smoke-test-only','mq_profile':w.meta['mq_profile']})
-            w.folder=folder;w.show_result(result);w.navigate(1);w.show();app.processEvents()
+            w.folder=folder;w.show_result(result);w.navigate(1);w.result_tabs.setCurrentIndex(3);w.show();app.processEvents()
             assert w.grab().save(str(folder/'windows-results.png'))
             w.navigate(3);app.processEvents();assert w.grab().save(str(folder/'windows-setup.png'))
             assert not w.chat_history

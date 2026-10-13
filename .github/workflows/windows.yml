@@ -31,6 +31,7 @@ jobs:
       - name: Probar el ejecutable sin Python externo ni sensores
         shell: pwsh
         run: |
+          $env:QT_QPA_PLATFORM = 'windows'
           $env:ITAI_DATA_DIR = Join-Path $env:RUNNER_TEMP 'ItAI datos de prueba ñ'
           $dest = Join-Path $env:RUNNER_TEMP 'ItAI smoke ñ'
           $p = Start-Process -FilePath '.\dist\ItAI\ItAI.exe' -ArgumentList @('--self-test', "`"$dest`"") -PassThru -Wait
@@ -52,6 +53,7 @@ jobs:
           $install = Join-Path $env:RUNNER_TEMP 'ItAI instalado'
           $p = Start-Process '.\dist-installer\ItAI-Setup-Windows-x64.exe' -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=`"$install`"") -PassThru -Wait
           if ($p.ExitCode -ne 0) { throw 'Falló la instalación' }
+          $env:QT_QPA_PLATFORM = 'windows'
           $env:ITAI_DATA_DIR = Join-Path $env:RUNNER_TEMP 'ItAI datos instalación'
           $dest = Join-Path $env:RUNNER_TEMP 'ItAI smoke instalado'
           $p = Start-Process "$install\ItAI.exe" -ArgumentList @('--self-test',"`"$dest`"") -PassThru -Wait
