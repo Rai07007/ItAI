@@ -30,7 +30,15 @@ En `%LOCALAPPDATA%\ItAI`. Puedes abrirla desde **Preparar equipo → Abrir carpe
 
 Para medir, analizar y graficar no necesitas instalar Ollama. Para conversar, instala Ollama desde su sitio oficial, descarga un modelo local adecuado para la RAM del HP y mantén Ollama abierto. Escribe el nombre del modelo en Preparar equipo; `auto` elige uno instalado. La aplicación usa únicamente el servidor local en `127.0.0.1:11434`. La descarga inicial requiere internet; el uso posterior no.
 
-La selección del modelo queda pendiente de conocer la RAM y procesador del HP. Si no vas a usarlo aún, escribe `none` en el campo de modelo. Las recomendaciones calculadas siguen disponibles.
+Para el HP con i3-7020U y 4 GB de RAM, comienza con **qwen2.5:0.5b**. Su descarga es de aproximadamente 398 MB; eso no equivale al consumo total de RAM. La viabilidad debe comprobarse en el HP con la app y Windows abiertos.
+
+1. Instala y abre Ollama desde https://ollama.com/download/windows (requiere Windows 10 22H2 o posterior).
+2. Con internet, abre PowerShell y ejecuta `ollama pull qwen2.5:0.5b` una sola vez.
+3. En ItAI abre Preparar equipo y pulsa **Usar Ollama en un equipo de 4 GB**.
+4. En este perfil, la app usa CPU con dos hilos, contexto de 4096 tokens, hasta 256 tokens de respuesta, contexto resumido y el último intercambio. Serializa sus consultas y pide liberar el modelo al terminar. Esto reduce memoria a costa de respuestas menos detalladas y recargas del modelo.
+5. Cierra aplicaciones que no uses. Completa una prueba de 30 minutos con Wi-Fi del ESP32 y realiza preguntas con internet desconectado; verifica lecturas recibidas y calidad de las respuestas.
+
+El modelo pequeño puede equivocarse o seguir peor las instrucciones. Las cifras y recomendaciones del informe siguen calculándose en Python; el chat no valida resultados. No se ha medido todavía su RAM o velocidad en el HP. Fuentes: https://ollama.com/library/qwen2.5:0.5b y https://docs.ollama.com/faq.
 
 ## Qué verifica la construcción automática
 

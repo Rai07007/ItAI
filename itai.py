@@ -18,6 +18,7 @@ import urllib.error
 import uuid
 import webbrowser
 from analysis import report, classify
+from llm_runtime import lightweight,generation_options,inference_slot
 
 from runtime_paths import DATA_ROOT
 ROOT=DATA_ROOT
@@ -121,10 +122,12 @@ def ollama_report(result,folder,model):
             '{"opening":"una apertura permitida","order":["identificador",...],"closing":"un cierre permitido"}. Usa cada identificador exactamente una vez. Aperturas permitidas: '+json.dumps(OPENINGS,ensure_ascii=False)+' Cierres permitidos: '+json.dumps(CLOSINGS,ensure_ascii=False)+'. '
             'No redactes ni alteres las frases. CATÁLOGO:\n'+json.dumps(catalogue,ensure_ascii=False))
         schema={'type':'object','properties':{'opening':{'type':'string','enum':OPENINGS},'closing':{'type':'string','enum':CLOSINGS},'order':{'type':'array','items':{'type':'string','enum':list(catalogue)},'minItems':1,'maxItems':len(catalogue)}},'required':['opening','order','closing'],'additionalProperties':False}
-        body=json.dumps({'model':model,'prompt':prompt,'format':schema,'stream':False,
-            'options':{'temperature':0,'num_predict':500}}).encode()
+        payload={'model':model,'prompt':prompt,'format':schema,'stream':False,'options':generation_options(model)}
+        if lightweight(model):payload['keep_alive']=0
+        body=json.dumps(payload).encode()
         req=urllib.request.Request(base+'/api/generate',data=body,headers={'Content-Type':'application/json'})
-        with urllib.request.urlopen(req,timeout=180) as r: response=json.load(r)
+        with inference_slot():
+            with urllib.request.urlopen(req,timeout=180) as r: response=json.load(r)
         ordered=validate_llm_order(response['response'],catalogue)
         content=json.loads(response['response'])
         opening=content.get('opening') if content.get('opening') in OPENINGS else OPENINGS[0]

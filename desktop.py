@@ -25,9 +25,11 @@ from local_chat import chat_stream, visit_context
 from mq135 import enrich, convert, calibrate
 from runtime_paths import ASSETS
 from equipment import read_config, import_transfer, CONFIG
+from llm_runtime import SMALL_MODEL,lightweight
 
 SETTINGS=ROOT/'desktop_settings.json'
 PROFILE=ROOT/'mq_reference.json'
+LLM_SETTINGS=ROOT/'llm_settings.json'
 KEY=os.environ.get('ITAI_KEY') or read_config().get('api_key','')
 BASE='http://192.168.4.1'
 COLORS={'temperature':'#df8959','humidity':'#488cbe','eco2':'#1f9c83'}
@@ -340,7 +342,7 @@ class Window(QMainWindow):
         context=visit_context(result)
         token=uuid.uuid4().hex;self.chat_token=token;history=list(self.chat_history)
         self.chat_history.append({'role':'user','content':question});self.chat_input.clear();self.chat_partial='';self.render_chat()
-        self.send_btn.setEnabled(False);self.cancel_chat.setEnabled(True);self.chat_status.setText('Ollama está preparando una respuesta en este computador…')
+        self.send_btn.setEnabled(False);self.cancel_chat.setEnabled(True);self.chat_status.setText('Ollama está preparando una respuesta; si hay otra consulta, espera su turno. Perfil 4 GB: contexto resumido y respuestas breves.' if lightweight(self.model.text().strip()) else 'Ollama está preparando una respuesta en este computador…')
         self.chat_worker=ChatJob(context,history,question,self.model.text().strip() or 'auto')
         self.chat_worker.chunk.connect(lambda part:self.chat_chunk(token,part))
         self.chat_worker.done.connect(lambda answer:self.chat_done(token,answer))
@@ -406,8 +408,15 @@ class Window(QMainWindow):
         self.profile_label=label('','',True);cl.addWidget(self.profile_label);self.cal_button=QPushButton('Preparar referencia · 60 segundos');self.cal_button.setObjectName('Primary');self.cal_button.clicked.connect(self.prepare_reference);cl.addWidget(self.cal_button);box.addWidget(c)
         c=card();cl=QVBoxLayout(c);cl.setContentsMargins(24,24,24,24);cl.addWidget(label('3 · Una explicación cercana, en este computador','CardTitle'))
         cl.addWidget(label('Ollama ayuda a ordenar una explicación sencilla de los resultados. Las cifras y las conclusiones se calculan y verifican en Python.','',True))
-        self.model=QLineEdit('auto');self.model.setPlaceholderText('auto, llama3:latest o none');cl.addWidget(self.model);cl.addWidget(label('Chat opcional: instala y abre Ollama con un modelo local descargado. Para medir sin LLM, escribe none.','Subtitle',True));box.addWidget(c)
+        self.model=QLineEdit(json_read(LLM_SETTINGS,{}).get('model','auto'));self.model.setPlaceholderText('auto, qwen2.5:0.5b o none');self.model.editingFinished.connect(self.save_model);cl.addWidget(self.model)
+        light_btn=QPushButton('Usar Ollama en un equipo de 4 GB');light_btn.clicked.connect(self.use_small_model);cl.addWidget(light_btn)
+        cl.addWidget(label('Perfil de 4 GB: qwen2.5:0.5b en CPU, respuestas breves y una consulta a la vez. Instala y abre Ollama con ese modelo descargado.','Subtitle',True));box.addWidget(c)
         data_btn=QPushButton('Abrir carpeta de datos y respaldos');data_btn.clicked.connect(lambda:QDesktopServices.openUrl(QUrl.fromLocalFile(str(ROOT))));box.addWidget(data_btn);box.addStretch();self.refresh_profile()
+    def save_model(self):
+        atomic_json(LLM_SETTINGS,{'model':self.model.text().strip() or 'auto'})
+    def use_small_model(self):
+        self.model.setText(SMALL_MODEL);self.save_model()
+        QMessageBox.information(self,'Perfil de 4 GB','Modelo seleccionado: qwen2.5:0.5b. Debe estar descargado en Ollama. Usaremos respuestas breves y liberaremos su memoria después de cada respuesta. Su calidad y velocidad deben comprobarse en este equipo.')
     def import_equipment(self):
         path,_=QFileDialog.getOpenFileName(self,'Importar configuración privada del mismo circuito','','Configuración (*.json)')
         if not path:return
