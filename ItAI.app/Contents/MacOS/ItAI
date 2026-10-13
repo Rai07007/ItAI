@@ -1,0 +1,10 @@
+#!/bin/zsh
+itai_root="$(cd -- "$(dirname -- "$0")/../../.." && pwd)"
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+export OLLAMA_NO_CLOUD=1
+if command -v ollama >/dev/null 2>&1; then
+  if ! curl --silent --fail --max-time 2 http://127.0.0.1:11434/api/tags >/dev/null; then
+    ollama serve > "$itai_root/ollama-local.log" 2>&1 &
+  fi
+fi
+exec "$itai_root/.venv/bin/python" "$itai_root/desktop.py" "$@" >> "$itai_root/app.log" 2>&1

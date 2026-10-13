@@ -1,0 +1,24 @@
+# Datos y configuraciones del equipo: no publicar
+mediciones/
+referencias/
+mq_reference.json
+desktop_settings.json
+*.sqlite
+*.sqlite-*
+*.csv
+conversacion*.txt
+.env
+.env.*
+!.env.example
+*.log
+# Entornos y archivos generados
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.DS_Store
+build/
+dist/
+respaldo*/
+demo*/
+.mplconfig/
