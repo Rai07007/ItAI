@@ -22,3 +22,11 @@ dist/
 respaldo*/
 demo*/
 .mplconfig/
+equipment.json
+equipment-backups/
+*.importing
+*equipo-privado*.json
+dist-installer/
+smoke-results/
+startup-error.txt
+llm_settings.json

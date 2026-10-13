@@ -52,7 +52,7 @@ class AnalysisTests(unittest.TestCase):
             rows=[row(i,temperature=None,humidity=None,flags=4|16|64) for i in range(3)]
             result=report(rows,{'house':'TEST','target':720},td)
             self.assertIsNone(result['environmental_fraction']['percent'])
-            json.loads((Path(td)/'analisis.json').read_text(),parse_constant=lambda s:self.fail(s))
+            json.loads((Path(td)/'analisis.json').read_text(encoding='utf-8'),parse_constant=lambda s:self.fail(s))
             self.assertTrue((Path(td)/'series.png').is_file())
 
     def test_llm_cannot_publish_invented_text(self):
@@ -81,10 +81,10 @@ class AnalysisTests(unittest.TestCase):
                 collect(args)
             folder=next((Path(td)/'mediciones').iterdir())
             db=connect_db(folder);self.assertEqual(len(read_rows(db)),720);db.close()
-            self.assertEqual(json.loads((folder/'sesion.json').read_text())['completion'],'completa')
+            self.assertEqual(json.loads((folder/'sesion.json').read_text(encoding='utf-8'))['completion'],'completa')
             self.assertTrue(device['lost'])
             import hashlib
-            hashes=json.loads((folder/'sha256.json').read_text())
+            hashes=json.loads((folder/'sha256.json').read_text(encoding='utf-8'))
             for name,expected in hashes.items():self.assertEqual(hashlib.sha256((folder/name).read_bytes()).hexdigest(),expected)
 
 if __name__=='__main__':unittest.main()

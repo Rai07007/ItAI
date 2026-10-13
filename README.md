@@ -15,7 +15,7 @@ Aplicación de escritorio Python/Qt conectada por Wi-Fi a un ESP32 Dev Kit. Regi
 
 ## Estado de distribución
 
-Probado en macOS. El lanzador `ItAI.app` necesita el código y un entorno Python al lado: no es un ejecutable autónomo. **Este repositorio todavía no incluye un instalador Windows ni una validación en el HP.** Publicar el código no equivale a disponer de una aplicación Windows instalada.
+Probado en macOS. El lanzador `ItAI.app` necesita el código y un entorno Python al lado: no es un ejecutable autónomo. La construcción de Windows genera un instalador para Windows 10/11 x64 con GitHub Actions. Consulta [la guía para Windows](WINDOWS.md). El ensayo físico con el HP y el circuito sigue pendiente.
 
 ## Instalación desde el código
 
@@ -40,6 +40,8 @@ El entorno se crea en cada computador: no copiar `.venv` desde otro sistema. Par
 ## Configuración antes de conectar
 
 Las claves del equipo en uso fueron retiradas de esta copia. `CAMBIAR_WIFI_2026` y `CONFIGURAR_CLAVE_API` son marcadores, no credenciales reales.
+
+En la app puedes importar un archivo privado de equipo o guardar la clave API desde **Preparar equipo → Configurar clave**, sin usar Terminal.
 
 Para un equipo nuevo, configura `PASSWORD` y `API_KEY` en `firmware/ItAI_Local/ItAI_Local.ino` antes de compilar. En Python, establece la variable de entorno `ITAI_KEY` con esa misma clave API. Conecta el computador al Wi-Fi configurado en la placa. El texto de ayuda de la interfaz contiene el marcador de contraseña y debe adaptarse a tu despliegue.
 

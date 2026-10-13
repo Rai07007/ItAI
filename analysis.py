@@ -9,7 +9,8 @@ import statsmodels.api as sm
 from mq135 import enrich
 from insights import build_insights
 from statsmodels.stats.multitest import multipletests
-os.environ.setdefault('MPLCONFIGDIR', str(Path(__file__).parent / '.mplconfig'))
+from runtime_paths import DATA_ROOT
+os.environ.setdefault('MPLCONFIGDIR', str(DATA_ROOT / '.mplconfig'))
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -140,7 +141,7 @@ def report(rows,metadata,folder):
     df,result=summarize(rows,metadata)
     export=df.copy(); export.insert(0,'house',metadata['house']); export.insert(1,'simulated',bool(metadata.get('demo',False)))
     export.to_csv(folder/'datos.csv',index=False)
-    (folder/'analisis.json').write_text(json.dumps(result,indent=2,ensure_ascii=False,allow_nan=False))
+    (folder/'analisis.json').write_text(json.dumps(result,indent=2,ensure_ascii=False,allow_nan=False), encoding='utf-8')
     plt.rcParams.update({'font.size':10,'axes.spines.top':False,'axes.spines.right':False})
     fig,axes=plt.subplots(len(LABELS),1,figsize=(11,11),sharex=True,layout='constrained')
     for ax,key in zip(axes,LABELS):
@@ -203,5 +204,5 @@ def report(rows,metadata,folder):
     body+='<h2>Recomendaciones de revisión</h2><ul>'+''.join('<li>'+esc(x)+'</li>' for x in result['recommendations'])+'</ul>'
     body+='<p>Interpretación local opcional del LLM: archivo interpretacion_llm.txt. Es un borrador para revisión humana, independiente de los resultados numéricos anteriores.</p>'
     body+='<details><summary>Metadatos</summary><pre>'+esc(json.dumps(metadata,indent=2,ensure_ascii=False))+'</pre></details>'
-    (folder/'informe.html').write_text('<!doctype html><html lang="es"><meta charset="utf-8"><title>ItAI · Informe</title><style>body{font:16px system-ui;max-width:1050px;margin:40px auto;padding:20px;color:#163040;line-height:1.5}h1,h2{color:#12697d}table{border-collapse:collapse;width:100%}td,th{padding:10px;border-bottom:1px solid #ccd}img{max-width:100%}pre{white-space:pre-wrap;background:#f1f5f7;padding:16px;overflow-wrap:anywhere}</style>'+body+'</html>')
+    (folder/'informe.html').write_text('<!doctype html><html lang="es"><meta charset="utf-8"><title>ItAI · Informe</title><style>body{font:16px system-ui;max-width:1050px;margin:40px auto;padding:20px;color:#163040;line-height:1.5}h1,h2{color:#12697d}table{border-collapse:collapse;width:100%}td,th{padding:10px;border-bottom:1px solid #ccd}img{max-width:100%}pre{white-space:pre-wrap;background:#f1f5f7;padding:16px;overflow-wrap:anywhere}</style>'+body+'</html>', encoding='utf-8')
     return result

@@ -18,22 +18,26 @@ from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QFont, QDesktopS
 from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QFrame,QLabel,QPushButton,QVBoxLayout,
     QHBoxLayout,QGridLayout,QLineEdit,QComboBox,QStackedWidget,QProgressBar,QTextBrowser,QFileDialog,
     QMessageBox,QDialog,QFormLayout,QDoubleSpinBox,QCheckBox,QDialogButtonBox,QScrollArea,QTableWidget,
-    QTableWidgetItem,QHeaderView,QTabWidget)
+    QTableWidgetItem,QHeaderView,QTabWidget,QInputDialog)
 from itai import ROOT, request, connect_db, save_batch, read_rows, atomic_json, utc, ollama_report
 from analysis import report, summarize, classify, fmt, p_fmt
 from local_chat import chat_stream, visit_context
 from mq135 import enrich, convert, calibrate
+from runtime_paths import ASSETS
+from equipment import read_config, import_transfer, CONFIG
+from llm_runtime import SMALL_MODEL,lightweight
 
 SETTINGS=ROOT/'desktop_settings.json'
 PROFILE=ROOT/'mq_reference.json'
-KEY=os.environ.get('ITAI_KEY','CONFIGURAR_CLAVE_API')
+LLM_SETTINGS=ROOT/'llm_settings.json'
+KEY=os.environ.get('ITAI_KEY') or read_config().get('api_key','')
 BASE='http://192.168.4.1'
 COLORS={'temperature':'#df8959','humidity':'#488cbe','eco2':'#1f9c83'}
 NAMES={'temperature':'Temperatura','humidity':'Humedad relativa','eco2':'Gases · eCO₂ estimado'}
 UNITS={'temperature':'°C','humidity':'%','eco2':'ppm estimados'}
 
 STYLE='''
-QWidget {font-family:"Avenir Next","Helvetica Neue",sans-serif;font-size:14px;color:#203e47;}
+QWidget {font-family:"Segoe UI","Avenir Next","Helvetica Neue",sans-serif;font-size:14px;color:#203e47;}
 QMainWindow, #Main {background:#f3f5f4;}
 #Sidebar {background:#173e45;} #Sidebar QLabel {color:#c5dedc;} #Sidebar #Brand {font-size:36px;font-weight:700;color:#ffffff;}
 #Sidebar QPushButton {background:transparent;color:#d4e7e5;border:0;text-align:left;padding:13px 16px;border-radius:10px;font-weight:600;}
@@ -63,7 +67,7 @@ def card():
     w=QFrame();w.setObjectName('Card');return w
 
 def json_read(path,default=None):
-    try:return json.loads(Path(path).read_text())
+    try:return json.loads(Path(path).read_text(encoding='utf-8'))
     except (OSError,ValueError):return default
 
 def preserved(status):
@@ -74,7 +78,7 @@ def preserved(status):
             meta=json_read(path,{})
             if meta.get('session_id')==status['session_id']:
                 try:
-                    db=sqlite3.connect(f'file:{path.parent / "lecturas.sqlite"}?mode=ro',uri=True)
+                    db=sqlite3.connect((path.parent / "lecturas.sqlite").resolve().as_uri()+"?mode=ro",uri=True)
                     n=db.execute('SELECT COUNT(*) FROM samples').fetchone()[0];db.close()
                     if n>=status['count']:return True
                 except sqlite3.Error:pass
@@ -175,7 +179,7 @@ class ReadJob(QThread):
     done=Signal(object);failed=Signal(str)
     def run(self):
         try:self.done.emit(request(BASE,'/status',KEY))
-        except Exception:self.failed.emit('Conecta este Mac a ItAI-Local. La red no necesita internet.')
+        except Exception:self.failed.emit('Conecta este computador a ItAI-Local. La red no necesita internet.')
 
 class Plot(QWidget):
     def __init__(self):
@@ -187,7 +191,7 @@ class Plot(QWidget):
         p=QPainter(self);p.setRenderHint(QPainter.RenderHint.Antialiasing)
         w,h=self.width(),self.height();left,right,top,bottom=65,w-25,25,h-36
         vals=[r.get(self.key) for r in self.rows if r.get(self.key) is not None and math.isfinite(r[self.key])]
-        p.setFont(QFont('Avenir Next',10))
+        p.setFont(QFont('Segoe UI' if sys.platform=='win32' else 'Avenir Next',10))
         if not vals:
             p.setPen(QColor('#8ca09f'));p.drawText(self.rect(),Qt.AlignmentFlag.AlignCenter,'Las lecturas aparecerán aquí\n'+('Prepara una referencia para ver ppm estimados.' if self.key=='eco2' else 'Inicia una visita cuando el equipo esté listo.'));return
         lo,hi=min(vals),max(vals);pad=max((hi-lo)*.2,1 if self.key!='eco2' else 50);lo-=pad;hi+=pad
@@ -245,7 +249,9 @@ class ReferenceDialog(QDialog):
 
 class Window(QMainWindow):
     def __init__(self,demo=False):
-        super().__init__();self.setWindowTitle('ItAI · Acompañar con evidencia');self.resize(1240,850);self.setMinimumSize(1020,760)
+        super().__init__();self.setWindowTitle('ItAI · Acompañar con evidencia');self.setMinimumSize(900,620)
+        available=QApplication.primaryScreen().availableGeometry()
+        self.resize(min(1240,available.width()-30),min(850,available.height()-50))
         self.rows=[];self.meta={};self.folder=None;self.worker=None;self.checker=None;self.chat_worker=None;self.chat_token=None;self.chat_history=[];self.chat_partial='';self.current_result=None;self.chat_scope=None;self.profile=json_read(PROFILE);self.demo=demo
         root=QWidget();root.setObjectName('Main');self.setCentralWidget(root);layout=QHBoxLayout(root);layout.setContentsMargins(0,0,0,0);layout.setSpacing(0)
         side=QFrame();side.setObjectName('Sidebar');side.setFixedWidth(205);sl=QVBoxLayout(side);sl.setContentsMargins(22,34,22,24)
@@ -253,7 +259,7 @@ class Window(QMainWindow):
         self.nav=[]
         for text in ['Visita en curso','Resultados','Preguntar a ItAI','Preparar equipo']:
             b=QPushButton(text);b.setCheckable(True);self.nav.append(b);sl.addWidget(b)
-        sl.addStretch();sl.addWidget(label('Todo queda en este Mac.\nSin internet. Sin nube.','',True));sl.addSpacing(20)
+        sl.addStretch();sl.addWidget(label('Todo queda en este computador.\nSin internet. Sin nube.','',True));sl.addSpacing(20)
         self.connection=label('○  Sin comprobar','',True);sl.addWidget(self.connection)
         layout.addWidget(side);self.pages=QStackedWidget();layout.addWidget(self.pages)
         self.build_visit();self.build_results();self.build_chat();self.build_setup()
@@ -264,7 +270,8 @@ class Window(QMainWindow):
         self.pages.setCurrentIndex(i)
         for j,b in enumerate(self.nav):b.setChecked(i==j)
     def page(self):
-        w=QWidget();box=QVBoxLayout(w);box.setContentsMargins(32,28,32,24);box.setSpacing(18);self.pages.addWidget(w);return w,box
+        w=QWidget();box=QVBoxLayout(w);box.setContentsMargins(32,28,32,24);box.setSpacing(18)
+        scroll=QScrollArea();scroll.setWidgetResizable(True);scroll.setWidget(w);self.pages.addWidget(scroll);return w,box
     def build_visit(self):
         w,box=self.page();head=QHBoxLayout();title=QVBoxLayout();title.addWidget(label('UNA MIRADA AL AMBIENTE','Eyebrow'));title.addWidget(label('Cada hogar, una historia.','Title'));title.addWidget(label('Observa cómo cambia el ambiente durante esta visita.','Subtitle'));head.addLayout(title);head.addStretch()
         self.house=QLineEdit('PRUEBA01');self.house.setMaximumWidth(150);self.house.setPlaceholderText('Código del hogar');head.addWidget(self.house);box.addLayout(head)
@@ -286,7 +293,7 @@ class Window(QMainWindow):
         chart=card();chl=QVBoxLayout(chart);chl.setContentsMargins(20,16,20,12);row=QHBoxLayout();row.addWidget(label('El ambiente, minuto a minuto'));row.addStretch();self.choose=QComboBox()
         for key in NAMES:self.choose.addItem(NAMES[key],key)
         self.choose.currentIndexChanged.connect(self.change_plot);row.addWidget(self.choose);chl.addLayout(row);self.plot=Plot();chl.addWidget(self.plot);box.addWidget(chart,1)
-        self.notice=label('Conecta el Mac a ItAI-Local. Puedes preparar la referencia del MQ135 desde «Preparar equipo».','Subtitle',True);box.addWidget(self.notice)
+        self.notice=label('Conecta el computador a ItAI-Local. Puedes preparar la referencia del MQ135 desde «Preparar equipo».','Subtitle',True);box.addWidget(self.notice)
     def build_results(self):
         w,box=self.page();row=QHBoxLayout();row.addWidget(label('Lo que nos cuenta la visita','Title'));row.addStretch();openbtn=QPushButton('Abrir visita');self.open_visit_btn=openbtn;openbtn.clicked.connect(self.open_visit);row.addWidget(openbtn);box.addLayout(row)
         self.result_title=label('Al terminar, encontrarás aquí tu resumen y las cifras.','Subtitle',True);box.addWidget(self.result_title)
@@ -335,7 +342,7 @@ class Window(QMainWindow):
         context=visit_context(result)
         token=uuid.uuid4().hex;self.chat_token=token;history=list(self.chat_history)
         self.chat_history.append({'role':'user','content':question});self.chat_input.clear();self.chat_partial='';self.render_chat()
-        self.send_btn.setEnabled(False);self.cancel_chat.setEnabled(True);self.chat_status.setText('Ollama está preparando una respuesta en este Mac…')
+        self.send_btn.setEnabled(False);self.cancel_chat.setEnabled(True);self.chat_status.setText('Ollama está preparando una respuesta; si hay otra consulta, espera su turno. Perfil 4 GB: contexto resumido y respuestas breves.' if lightweight(self.model.text().strip()) else 'Ollama está preparando una respuesta en este computador…')
         self.chat_worker=ChatJob(context,history,question,self.model.text().strip() or 'auto')
         self.chat_worker.chunk.connect(lambda part:self.chat_chunk(token,part))
         self.chat_worker.done.connect(lambda answer:self.chat_done(token,answer))
@@ -361,7 +368,7 @@ class Window(QMainWindow):
         if path:
             lines=['CONVERSACIÓN CON OLLAMA · GENERADA POR IA, NO ES EL INFORME ESTADÍSTICO',self.chat_context.text(),'']
             lines.extend(('Tú: ' if m['role']=='user' else 'ItAI: ')+m['content']+'\n' for m in self.chat_history)
-            Path(path).write_text('\n'.join(lines));self.chat_status.setText('Conversación guardada en este Mac.')
+            Path(path).write_text('\n'.join(lines), encoding='utf-8');self.chat_status.setText('Conversación guardada en este computador.')
     def populate_insights(self,result):
         esc=html.escape;ins=result.get('insights',{})
         if not ins:
@@ -393,22 +400,53 @@ class Window(QMainWindow):
     def build_setup(self):
         w,box=self.page();box.addWidget(label('Un equipo listo para escuchar','Title'));box.addWidget(label('Prepara una vez. Conserva la misma referencia entre hogares.','Subtitle'))
         c=card();cl=QVBoxLayout(c);cl.setContentsMargins(24,24,24,24)
-        cl.addWidget(label('1 · Conectar el equipo','CardTitle'));cl.addWidget(label('Wi-Fi: ItAI-Local\nContraseña: CAMBIAR_WIFI_2026\nDHT11: GPIO16 · MQ135 A0: GPIO34 con divisor.','',True))
+        cl.addWidget(label('1 · Conectar el equipo','CardTitle'));cl.addWidget(label('Conecta el Wi-Fi a ItAI-Local con la contraseña de tu circuito.\nDHT11: GPIO16 · MQ135 A0: GPIO34 con divisor.','',True))
+        row=QHBoxLayout();self.import_equipment_btn=QPushButton('Importar equipo desde el Mac');self.import_equipment_btn.clicked.connect(self.import_equipment);row.addWidget(self.import_equipment_btn)
+        self.configure_key_btn=QPushButton('Configurar clave');self.configure_key_btn.clicked.connect(self.configure_key);row.addWidget(self.configure_key_btn);cl.addLayout(row)
         self.check=QPushButton('Comprobar conexión');self.check.clicked.connect(self.check_device);cl.addWidget(self.check);box.addWidget(c)
         c=card();cl=QVBoxLayout(c);cl.setContentsMargins(24,24,24,24);cl.addWidget(label('2 · Referencia para ppm estimados','CardTitle'))
         self.profile_label=label('','',True);cl.addWidget(self.profile_label);self.cal_button=QPushButton('Preparar referencia · 60 segundos');self.cal_button.setObjectName('Primary');self.cal_button.clicked.connect(self.prepare_reference);cl.addWidget(self.cal_button);box.addWidget(c)
-        c=card();cl=QVBoxLayout(c);cl.setContentsMargins(24,24,24,24);cl.addWidget(label('3 · Una explicación cercana, en este Mac','CardTitle'))
+        c=card();cl=QVBoxLayout(c);cl.setContentsMargins(24,24,24,24);cl.addWidget(label('3 · Una explicación cercana, en este computador','CardTitle'))
         cl.addWidget(label('Ollama ayuda a ordenar una explicación sencilla de los resultados. Las cifras y las conclusiones se calculan y verifican en Python.','',True))
-        self.model=QLineEdit('auto');self.model.setPlaceholderText('auto, llama3:latest o none');cl.addWidget(self.model);box.addWidget(c);box.addStretch();self.refresh_profile()
+        self.model=QLineEdit(json_read(LLM_SETTINGS,{}).get('model','auto'));self.model.setPlaceholderText('auto, qwen2.5:0.5b o none');self.model.editingFinished.connect(self.save_model);cl.addWidget(self.model)
+        light_btn=QPushButton('Usar Ollama en un equipo de 4 GB');light_btn.clicked.connect(self.use_small_model);cl.addWidget(light_btn)
+        cl.addWidget(label('Perfil de 4 GB: qwen2.5:0.5b en CPU, respuestas breves y una consulta a la vez. Instala y abre Ollama con ese modelo descargado.','Subtitle',True));box.addWidget(c)
+        data_btn=QPushButton('Abrir carpeta de datos y respaldos');data_btn.clicked.connect(lambda:QDesktopServices.openUrl(QUrl.fromLocalFile(str(ROOT))));box.addWidget(data_btn);box.addStretch();self.refresh_profile()
+    def save_model(self):
+        atomic_json(LLM_SETTINGS,{'model':self.model.text().strip() or 'auto'})
+    def use_small_model(self):
+        self.model.setText(SMALL_MODEL);self.save_model()
+        QMessageBox.information(self,'Perfil de 4 GB','Modelo seleccionado: qwen2.5:0.5b. Debe estar descargado en Ollama. Usaremos respuestas breves y liberaremos su memoria después de cada respuesta. Su calidad y velocidad deben comprobarse en este equipo.')
+    def import_equipment(self):
+        path,_=QFileDialog.getOpenFileName(self,'Importar configuración privada del mismo circuito','','Configuración (*.json)')
+        if not path:return
+        if QMessageBox.question(self,'Confirmar circuito','¿Vas a usar el mismo MQ135, ESP32 y divisor de voltaje que en el Mac? La referencia solo se debe trasladar al mismo circuito.',QMessageBox.StandardButton.Yes|QMessageBox.StandardButton.No,QMessageBox.StandardButton.No)!=QMessageBox.StandardButton.Yes:return
+        try:
+            data=import_transfer(path,ROOT)
+            global KEY
+            KEY=os.environ.get('ITAI_KEY') or data['api_key'];self.profile=json_read(PROFILE);self.refresh_profile()
+            QMessageBox.information(self,'Equipo importado','Configuración importada. Conecta el Wi-Fi a ItAI-Local y pulsa Comprobar conexión. Las configuraciones anteriores quedaron respaldadas.')
+        except Exception as e:QMessageBox.information(self,'No se pudo importar',str(e))
+    def configure_key(self):
+        value,ok=QInputDialog.getText(self,'Clave del equipo','Clave API configurada en tu ESP32 (distinta de la contraseña Wi-Fi):',QLineEdit.EchoMode.Password)
+        if not ok:return
+        value=value.strip()
+        if not value or any(ord(c)<33 or ord(c)>126 for c in value) or len(value)>200:
+            QMessageBox.information(self,'Clave inválida','Usa la clave API del firmware.');return
+        atomic_json(CONFIG,{'api_key':value})
+        global KEY
+        KEY=os.environ.get('ITAI_KEY') or value
+        QMessageBox.information(self,'Clave guardada','La clave se guardó solamente en este computador.')
     def refresh_profile(self):
         p=self.profile
         if p:self.profile_label.setText(f"Referencia guardada: {p['reference_ppm']:g} ppm ({'medida' if p['reference_kind']=='measured' else 'supuesta'}).\nCircuito: {p['circuit_v']:g} V · factor del divisor: {p['divider_factor']:g}\nFecha: {p['created_utc'][:10]} · identificador {p['id']}\n{p['reference_note']}")
         else:self.profile_label.setText('Aún no hay referencia. Puedes ver temperatura, humedad y voltaje; los ppm aparecerán después de preparar el MQ135.')
     def change_plot(self):self.plot.key=self.choose.currentData();self.plot.update()
     def controls(self,running):
-        self.open_visit_btn.setEnabled(not running);self.start.setEnabled(not running);self.stop.setEnabled(running);self.resume.setEnabled(not running);self.cal_button.setEnabled(not running);self.house.setEnabled(not running);self.check.setEnabled(not running)
+        self.import_equipment_btn.setEnabled(not running);self.configure_key_btn.setEnabled(not running);self.open_visit_btn.setEnabled(not running);self.start.setEnabled(not running);self.stop.setEnabled(running);self.resume.setEnabled(not running);self.cal_button.setEnabled(not running);self.house.setEnabled(not running);self.check.setEnabled(not running)
     def launch(self,resume=None,calibration=None):
         if self.worker and self.worker.isRunning():return
+        if not KEY:QMessageBox.information(self,'Preparar equipo','Importa la configuración del Mac o configura la clave en Preparar equipo.');self.navigate(3);return
         self.clear_chat();self.current_result=None;self.demo=False;self.controls(True);self.rows=[];self.plot.set_rows([]);self.status.setText('Conectando al equipo…');self.navigate(0)
         self.worker=Job(self.house.text(),self.profile,resume,calibration,self.model.text().strip() or 'auto')
         self.worker.updated.connect(self.update_state);self.worker.completed.connect(self.completed);self.worker.failed.connect(self.failed);self.worker.finished.connect(lambda:self.controls(False));self.worker.start()
@@ -425,6 +463,7 @@ class Window(QMainWindow):
         d=ReferenceDialog(self)
         if d.exec()==QDialog.DialogCode.Accepted:self.launch(calibration=d.config)
     def check_device(self):
+        if not KEY:QMessageBox.information(self,'Preparar equipo','Primero importa el equipo o configura su clave API.');return
         self.check.setEnabled(False);self.checker=ReadJob();self.checker.done.connect(self.device_status);self.checker.failed.connect(self.failed);self.checker.finished.connect(lambda:self.check.setEnabled(True));self.checker.start()
     def device_status(self,status):
         self.connection.setText('●  Equipo conectado');mins=math.ceil(status.get('startup_remaining_ms',0)/60000)
@@ -435,7 +474,7 @@ class Window(QMainWindow):
             self.clear_chat();self.chat_scope=new_scope;self.current_result=None
         self.chat_context.setText('Contexto: '+data['meta']['house']+(' · datos simulados' if data['meta'].get('demo') else ' · visita actual'))
         self.meta=data['meta'];self.rows=enrich(data['rows'],self.meta.get('mq_profile'));self.status.setText(data['message']);self.connection.setText('●  Equipo conectado' if not data['error'] else '○  Reconectando')
-        self.bar.setMaximum(self.meta['target']);self.bar.setValue(len(self.rows));self.count.setText(f"{len(self.rows)} de {self.meta['target']} lecturas · guardadas en este Mac")
+        self.bar.setMaximum(self.meta['target']);self.bar.setValue(len(self.rows));self.count.setText(f"{len(self.rows)} de {self.meta['target']} lecturas · guardadas en este computador")
         elapsed=int(self.rows[-1]['elapsed_ms']/1000) if self.rows else 0;total=int(self.meta.get('duration_ms',1800000)/1000)
         self.clock.setText(f'{elapsed//60:02}:{elapsed%60:02} / {total//60:02}:{total%60:02}')
         self.plot.set_rows(self.rows)
@@ -473,7 +512,7 @@ class Window(QMainWindow):
         self.current_result=result;self.populate_insights(result)
         self.chat_context.setText('Contexto: '+result['metadata']['house']+(' · datos simulados' if result['metadata'].get('demo') else ' · visita seleccionada'))
         self.meta=result['metadata'];self.result_title.setText(self.meta['house']+(' · DEMOSTRACIÓN CON DATOS SIMULADOS' if self.meta.get('demo') else '')+' · '+str(result['quality']['received'])+' lecturas guardadas')
-        text=(self.folder/'interpretacion_llm.txt').read_text() if (self.folder/'interpretacion_llm.txt').exists() else 'Tu análisis numérico está listo. El resumen local aún no se generó.'
+        text=(self.folder/'interpretacion_llm.txt').read_text(encoding='utf-8') if (self.folder/'interpretacion_llm.txt').exists() else 'Tu análisis numérico está listo. El resumen local aún no se generó.'
         if 'LLM NO DISPONIBLE' in text or 'LLM desactivado' in text:
             from itai import llm_catalogue,OPENINGS,CLOSINGS
             text=OPENINGS[0]+'\n\n'+'\n\n'.join(llm_catalogue(result).values())+'\n\n'+CLOSINGS[0]+'\n\nResumen automático de Python; LLM no disponible.'
@@ -511,7 +550,7 @@ class Window(QMainWindow):
         else:event.accept()
 
 def main():
-    app=QApplication(sys.argv);app.setApplicationName('ItAI');app.setWindowIcon(QIcon(str(ROOT/'icon.png')));app.setStyleSheet(STYLE)
+    app=QApplication(sys.argv);app.setApplicationName('ItAI');app.setWindowIcon(QIcon(str(ASSETS/'icon.png')));app.setStyleSheet(STYLE)
     window=Window(demo='--demo' in sys.argv);window.show()
     if '--screenshot' in sys.argv:
         i=sys.argv.index('--screenshot');path=sys.argv[i+1]

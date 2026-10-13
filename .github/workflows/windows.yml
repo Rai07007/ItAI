@@ -1,0 +1,81 @@
+name: Construir ItAI para Windows
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['**.py', 'requirements.txt', 'packaging/**', '.github/workflows/windows.yml', 'WINDOWS.md']
+  pull_request:
+    paths: ['**.py', 'requirements.txt', 'packaging/**', '.github/workflows/windows.yml', 'WINDOWS.md']
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+          cache: pip
+      - name: Instalar dependencias de construcción
+        run: python -m pip install -r requirements.txt "pyinstaller>=6.11,<7" pillow
+      - name: Verificar análisis, recuperación y configuración
+        run: python -m unittest discover -s . -p "test_*.py" -v
+      - name: Crear aplicación autocontenida
+        run: python -m PyInstaller --clean --noconfirm packaging/ItAI.spec
+      - name: Probar el ejecutable sin Python externo ni sensores
+        shell: pwsh
+        run: |
+          $env:QT_QPA_PLATFORM = 'windows'
+          $env:ITAI_DATA_DIR = Join-Path $env:RUNNER_TEMP 'ItAI datos de prueba ñ'
+          $dest = Join-Path $env:RUNNER_TEMP 'ItAI smoke ñ'
+          $p = Start-Process -FilePath '.\dist\ItAI\ItAI.exe' -ArgumentList @('--self-test', "`"$dest`"") -PassThru -Wait
+          if ($p.ExitCode -ne 0 -or !(Test-Path "$dest\passed.json")) {
+            Get-Content "$env:ITAI_DATA_DIR\startup-error.txt" -ErrorAction SilentlyContinue
+            throw 'Falló la prueba del ejecutable'
+          }
+          Copy-Item $dest -Destination 'smoke-results' -Recurse
+      - name: Construir instalador para el usuario actual
+        shell: pwsh
+        run: |
+          $iscc = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+          if (!(Test-Path $iscc)) { throw 'Falta Inno Setup 6 en el ejecutor' }
+          & $iscc packaging\ItAI.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Falló el instalador' }
+      - name: Comprobar instalación y conservación de datos al desinstalar
+        shell: pwsh
+        run: |
+          $install = Join-Path $env:RUNNER_TEMP 'ItAI instalado'
+          $p = Start-Process '.\dist-installer\ItAI-Setup-Windows-x64.exe' -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=`"$install`"") -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw 'Falló la instalación' }
+          $env:QT_QPA_PLATFORM = 'windows'
+          $env:ITAI_DATA_DIR = Join-Path $env:RUNNER_TEMP 'ItAI datos instalación'
+          $dest = Join-Path $env:RUNNER_TEMP 'ItAI smoke instalado'
+          $p = Start-Process "$install\ItAI.exe" -ArgumentList @('--self-test',"`"$dest`"") -PassThru -Wait
+          if ($p.ExitCode -ne 0 -or !(Test-Path "$dest\passed.json")) { throw 'Falló la app instalada' }
+          Set-Content "$env:ITAI_DATA_DIR\conservar.txt" 'datos conservados'
+          $p = Start-Process "$install\unins000.exe" -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -PassThru -Wait
+          if ($p.ExitCode -ne 0 -or !(Test-Path "$env:ITAI_DATA_DIR\conservar.txt")) { throw 'Falló la conservación de datos' }
+      - name: Registrar versiones y huellas
+        shell: pwsh
+        run: |
+          python -m pip freeze > dist-installer\dependencias-build.txt
+          Copy-Item WINDOWS.md dist-installer\LEEME-WINDOWS.md
+          Get-FileHash dist-installer\*.exe -Algorithm SHA256 | Format-List | Out-File dist-installer\SHA256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ItAI-Windows-x64
+          path: dist-installer/
+          retention-days: 90
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Verificacion-Windows
+          path: smoke-results/
+          if-no-files-found: ignore

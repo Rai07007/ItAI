@@ -68,7 +68,7 @@ class DesktopCaptureTests(unittest.TestCase):
                 job.run()
             self.assertEqual(errors,[]);self.assertEqual(len(done),1)
             folder=Path(done[0][0]);db=connect_db(folder);self.assertEqual(len(read_rows(db)),720);db.close()
-            self.assertEqual(json.loads((folder/'sesion.json').read_text())['completion'],'completa')
+            self.assertEqual(json.loads((folder/'sesion.json').read_text(encoding='utf-8'))['completion'],'completa')
             self.assertTrue(device['lost'])
     def test_pending_buffer_not_overwritten(self):
         from unittest.mock import patch
